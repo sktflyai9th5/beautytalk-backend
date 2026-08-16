@@ -155,9 +155,25 @@ async def negotiate_offer(state, session: Session, sdp: str, sdp_type: str) -> O
             if pc.connectionState in ("failed", "closed"):
                 current = manager.get(session_id)
                 if current is not None and current.pc is pc:
-                    await manager.close_session(
-                        session_id, reason=f"webrtc_{pc.connectionState}"
-                    )
+                    if current.ws is not None:
+                        # WS가 살아있으면 세션은 유지하고 피어만 정리한다.
+                        # (UDP가 막힌 망에서는 WebRTC가 실패해도 WS 스냅샷 폴백으로
+                        #  분석이 계속되므로 세션을 죽이면 안 된다)
+                        current.pc = None
+                        current.data_channel = None
+                        _cancel_media_tasks(current)
+                        with contextlib.suppress(Exception):
+                            await pc.close()
+                        log_event(
+                            logger,
+                            "webrtc_peer_detached",
+                            session_id=session_id,
+                            reason=f"webrtc_{pc.connectionState}",
+                        )
+                    else:
+                        await manager.close_session(
+                            session_id, reason=f"webrtc_{pc.connectionState}"
+                        )
                 else:
                     # 세션이 더 이상 이 피어를 소유하지 않으면 (교체/정리 경합) 직접 닫아 누수를 막는다
                     with contextlib.suppress(Exception):
