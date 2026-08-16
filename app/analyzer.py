@@ -226,6 +226,10 @@ class QwenAnalyzer:
         if not settings.qwen_api_url:
             raise ValueError("QWEN_API_URL이 설정되지 않았습니다 (또는 ANALYZER_MOCK=true 사용)")
         self._model = settings.qwen_model
+        self._system_prompt = _SYSTEM_PROMPT
+        if settings.qwen_no_think:
+            # Qwen3 thinking 모드가 max_tokens를 잠식해 응답이 비는 것을 방지
+            self._system_prompt += "\n/no_think"
         self._client = httpx.AsyncClient(
             base_url=settings.qwen_api_url,
             headers={"Authorization": f"Bearer {settings.qwen_api_key}"},
@@ -239,9 +243,9 @@ class QwenAnalyzer:
         body = {
             "model": self._model,
             "temperature": 0.3,
-            "max_tokens": 700,
+            "max_tokens": 4000,  # thinking 모델도 JSON이 잘리지 않도록 여유 (instruct는 조기 종료라 무해)
             "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": self._system_prompt},
                 {
                     "role": "user",
                     "content": [

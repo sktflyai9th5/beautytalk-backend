@@ -142,6 +142,10 @@ async def run(args) -> None:
     assert health["webrtc_sessions"] >= 1, health
     assert health["ws_connections"] >= 1, health
 
+    # mock 모드는 결정적 결과를 검증하고, 실모델 모드(--real-model)는
+    # 유효한 분석 응답(ok/no_face)이 돌아오는지만 검증한다 (합성 영상엔 얼굴이 없으므로).
+    ok_statuses = ("ok", "no_face") if args.real_model else ("ok",)
+
     # 5) 트리거 경로 1: WebRTC data channel
     channel.send(
         json.dumps(
@@ -151,9 +155,11 @@ async def run(args) -> None:
     )
     print("[*] analyze trigger sent via data channel")
     result = await wait_result(results, "trigger-dc", args.timeout)
-    assert result["status"] == "ok", result
-    assert result["region"] == "lips", result
-    print(f"[+] datachannel-trigger result ok: {result['message']}")
+    assert result["status"] in ok_statuses, result
+    if not args.real_model:
+        assert result["region"] == "lips", result
+    assert result["message"], result
+    print(f"[+] datachannel-trigger result: status={result['status']} message={result['message']}")
 
     # 6) 트리거 경로 2: WebSocket
     await ws.send(
@@ -164,9 +170,11 @@ async def run(args) -> None:
     )
     print("[*] analyze trigger sent via websocket")
     result = await wait_result(results, "trigger-ws", args.timeout)
-    assert result["status"] == "ok", result
-    assert result["region"] == "cheeks", result
-    print(f"[+] websocket-trigger result ok: {result['message']}")
+    assert result["status"] in ok_statuses, result
+    if not args.real_model:
+        assert result["region"] == "cheeks", result
+    assert result["message"], result
+    print(f"[+] websocket-trigger result: status={result['status']} message={result['message']}")
 
     # 7) 정리
     reader_task.cancel()
@@ -182,6 +190,11 @@ def main() -> None:
     parser.add_argument("--session-id", default=None)
     parser.add_argument("--stream-seconds", type=float, default=3.0)
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument(
+        "--real-model",
+        action="store_true",
+        help="실제 모델 서버 대상: no_face도 정상으로 간주하고 mock 전용 검증은 건너뜀",
+    )
     args = parser.parse_args()
     asyncio.run(run(args))
 

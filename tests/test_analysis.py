@@ -33,6 +33,7 @@ def make_settings(**overrides):
         analysis_timeout=5,
         max_sessions=50,
         debug_save_frames=False,
+        qwen_no_think=True,
     )
     values.update(overrides)
     return Settings(**values)

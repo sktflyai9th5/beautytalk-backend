@@ -39,6 +39,32 @@ Tailscale 내부망 기준 접속 주소:
 > 시작 로그에 `analyzer_mock_auto_enabled` WARNING이 남는다. 실서비스 배포 시에는
 > compose에 `QWEN_API_URL`(+`ANALYZER_MOCK=false`)을 반드시 넣을 것.
 
+추가 env: `DEBUG_SAVE_FRAMES=true`(분석 프레임을 `debug_frames/`에 저장),
+`QWEN_NO_THINK`(기본 true, Qwen3 thinking 억제 시도).
+
+### 실제 모델 실행 (Ollama, 팀 노트북 RTX 4090에서 검증됨)
+
+```powershell
+ollama pull qwen3-vl:8b-instruct   # thinking 없는 instruct 버전을 쓸 것!
+```
+
+> 주의: `qwen3-vl:8b`(기본 태그)은 thinking 모델이라 응답이 수십 초 걸리고
+> max_tokens를 thinking이 전부 소모해 빈 응답이 온다. 반드시 `-instruct` 태그 사용.
+> 검증 결과 warm 상태 분석 속도 약 3초.
+
+서버 실행 (mock 대신 실제 모델):
+
+```powershell
+$env:ANALYZER_MOCK='false'
+$env:QWEN_API_URL='http://127.0.0.1:11434/v1'
+$env:QWEN_MODEL='qwen3-vl:8b-instruct'
+$env:DEBUG_SAVE_FRAMES='true'
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+모델만 따로 검증: `python scripts\test_model_direct.py 사진.jpg --question "립 봐줘잉"`
+파이프라인 E2E(실모델): `python scripts\test_webrtc_client.py ... --real-model`
+
 ## API
 
 ### `POST /webrtc/offer`
