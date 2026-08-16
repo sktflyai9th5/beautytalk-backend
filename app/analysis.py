@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import base64
 import io
 import json
 import logging
@@ -116,14 +117,48 @@ async def send_to_session(session: Session, message: BaseModel) -> str:
     return "dropped"
 
 
-async def run_analysis(state, session: Session, *, question: str, request_id: str) -> None:
-    """분석 1회 실행 후 결과를 세션으로 push. 어떤 예외도 error 결과로 변환한다."""
+FRESH_FRAME_MAX_AGE = 3.0  # 초 — 이보다 오래된 WebRTC 프레임이면 스냅샷 폴백을 우선한다
+
+
+async def run_analysis(
+    state,
+    session: Session,
+    *,
+    question: str,
+    request_id: str,
+    image_fallback: bytes | None = None,
+) -> None:
+    """분석 1회 실행 후 결과를 세션으로 push. 어떤 예외도 error 결과로 변환한다.
+
+    프레임 소스 우선순위: 최근 WebRTC 프레임 → 트리거에 첨부된 스냅샷(image_fallback)
+    → 오래된 WebRTC 프레임. (스냅샷은 UDP가 막힌 망에서 WS로 전달되는 폴백 경로)
+    """
     settings = state.settings
     started = time.perf_counter()
     try:
         async with session.analysis_lock:
             frame = session.frames.latest()
-            jpeg = await _frame_to_jpeg(frame) if frame is not None else None
+            frame_age = (
+                time.monotonic() - session.frames.last_frame_at
+                if session.frames.last_frame_at
+                else None
+            )
+            if frame is not None and frame_age is not None and frame_age <= FRESH_FRAME_MAX_AGE:
+                jpeg, frame_source = await _frame_to_jpeg(frame), "webrtc"
+            elif image_fallback is not None:
+                jpeg, frame_source = image_fallback, "snapshot"
+            elif frame is not None:
+                jpeg, frame_source = await _frame_to_jpeg(frame), "webrtc_stale"
+            else:
+                jpeg, frame_source = None, "none"
+            log_event(
+                logger,
+                "analysis_frame_source",
+                session_id=session.session_id,
+                request_id=request_id,
+                frame_source=frame_source,
+                frame_age_s=round(frame_age, 1) if frame_age is not None else None,
+            )
             if jpeg is not None and settings.debug_save_frames:
                 await _save_debug_frame(jpeg, session.session_id, request_id)
             payload = await asyncio.wait_for(
@@ -227,6 +262,16 @@ async def handle_client_message(state, session: Session, raw, *, source: str) ->
     if msg_type == "analyze":
         request_id = str(msg.get("request_id") or uuid.uuid4().hex)
         question = str(msg.get("question") or DEFAULT_QUESTION).strip() or DEFAULT_QUESTION
+        # WS로 첨부된 스냅샷 (WebRTC UDP가 막힌 망 대비 폴백, data URL/base64 모두 허용)
+        image_fallback = None
+        image_b64 = msg.get("image_b64")
+        if isinstance(image_b64, str) and image_b64:
+            raw = image_b64.split(",", 1)[-1]
+            if len(raw) <= 8_000_000:
+                try:
+                    image_fallback = base64.b64decode(raw, validate=False)
+                except (ValueError, TypeError):
+                    image_fallback = None
         log_event(
             logger,
             "analyze_trigger",
@@ -235,6 +280,7 @@ async def handle_client_message(state, session: Session, raw, *, source: str) ->
             question=question,
             source=source,
             has_frame=session.frames.latest() is not None,
+            has_snapshot=image_fallback is not None,
         )
         # 분석이 이미 진행 중이면 무한 큐잉하지 않고 거절한다 (음성 트리거 중복 발화 대비)
         if session.analysis_lock.locked():
@@ -264,7 +310,13 @@ async def handle_client_message(state, session: Session, raw, *, source: str) ->
             return
         spawn_tracked(
             session.analysis_tasks,
-            run_analysis(state, session, question=question, request_id=request_id),
+            run_analysis(
+                state,
+                session,
+                question=question,
+                request_id=request_id,
+                image_fallback=image_fallback,
+            ),
             task_logger=logger,
             event="analysis_task_crashed",
             session_id=session.session_id,

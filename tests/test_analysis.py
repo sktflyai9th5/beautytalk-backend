@@ -206,6 +206,38 @@ async def test_handle_client_message_ignored_when_session_closing():
     assert session.analysis_tasks == set()
 
 
+async def test_analyze_uses_ws_snapshot_when_no_webrtc_frame():
+    import base64
+
+    received = {}
+
+    class RecordingAnalyzer:
+        name = "recording"
+
+        async def analyze(self, image_jpeg, question):
+            received["jpeg"] = image_jpeg
+            return await MockAnalyzer().analyze(image_jpeg, question)
+
+    state = make_state(RecordingAnalyzer())
+    session = Session(session_id="s1")
+    session.ws = FakeWebSocket()
+    snapshot = b"\xff\xd8fake-jpeg-bytes"
+    image_b64 = "data:image/jpeg;base64," + base64.b64encode(snapshot).decode()
+    await handle_client_message(
+        state,
+        session,
+        json.dumps({"type": "analyze", "request_id": "snap-1", "image_b64": image_b64}),
+        source="websocket",
+    )
+    for _ in range(100):
+        if any(m.get("type") == "analysis_result" for m in session.ws.sent):
+            break
+        await asyncio.sleep(0.02)
+    assert received["jpeg"] == snapshot
+    result = [m for m in session.ws.sent if m.get("type") == "analysis_result"][0]
+    assert result["status"] == "ok"
+
+
 async def test_debug_save_frames_writes_jpeg(tmp_path, monkeypatch):
     import numpy as np
     from av import VideoFrame
