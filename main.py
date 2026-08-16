@@ -1,7 +1,9 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 
 from app.analyzer import get_analyzer
 from app.config import load_settings
@@ -54,6 +56,15 @@ app.include_router(websocket_router)
 @app.get("/")
 def root():
     return {"service": "beautytalk-backend", "status": "ok"}
+
+
+@app.get("/test")
+def webrtc_test_page():
+    """앱 완성 전 브라우저로 WebRTC/WS 전체 흐름을 검증하는 테스트 페이지."""
+    return FileResponse(
+        Path(__file__).parent / "app" / "static" / "webrtc_test.html",
+        media_type="text/html",
+    )
 
 
 @app.get("/health")

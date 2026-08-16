@@ -98,8 +98,15 @@ nullable로 처리해야 한다. 분석이 이미 진행 중일 때 온 트리�
 
 ## 테스트
 
+반드시 venv를 활성화한 뒤 실행할 것 (`uvicorn`/`pytest` not found 오류의 원인):
+
+```powershell
+cd C:\portable\beautytalk-backend
+.\.venv\Scripts\Activate.ps1   # 없으면: python -m venv .venv 후 pip install -r requirements-dev.txt
+```
+
 ```bash
-pip install -r requirements-dev.txt
+python scripts/check_env.py    # 버전/호환성 검증 (로컬·컨테이너 공용)
 pytest
 
 # 서버 띄운 뒤 E2E:
@@ -107,17 +114,44 @@ python scripts/test_ws_client.py --url ws://127.0.0.1:8000
 python scripts/test_webrtc_client.py --http-url http://127.0.0.1:8000 --ws-url ws://127.0.0.1:8000
 ```
 
+### 웹 테스트 페이지 (`GET /test`)
+
+앱 완성 전 브라우저만으로 전체 흐름(WebRTC 영상 송신 → 트리거 → 결과 수신/TTS)을
+검증하는 페이지. 다른 노트북(같은 Tailscale 네트워크)에서
+`http://100.91.201.104:<port>/test` 접속 → "합성 영상으로 시작" → "립 봐줘" 클릭.
+
+- **합성 영상 모드**: 어디서나 동작 (plain http에서도 가능)
+- **카메라 모드**: plain http에서는 브라우저가 getUserMedia를 차단하므로 크롬
+  `chrome://flags/#unsafely-treat-insecure-origin-as-secure`에 주소 등록 필요
+- 브라우저는 카메라 권한이 없으면 ICE candidate를 mDNS(.local)로 익명화한다.
+  이 경우에도 **서버가 호스트에서 직접 실행 중이면** 서버 candidate(Tailscale IP)로
+  연결이 성립한다. Docker 컨테이너 서버로는 브라우저 WebRTC가 실패한다 (아래 참고).
+
 ## 배포
 
 `main` push → GitHub Actions가 Docker 이미지를 빌드/푸시 → 팀 노트북이 Tailscale 경유 SSH로
 `docker compose pull && up -d` 실행 (`.github/workflows/deploy.yml`).
 
-### WebRTC + Docker 주의사항
+### WebRTC + Docker 주의사항 (2026-08-16 실측)
 
 시그널링(HTTP/WS)은 8000/tcp 포트 매핑으로 문제없지만, **WebRTC 미디어는 UDP**라서
 Linux 컨테이너(Windows 호스트) 안에서 돌면 answer SDP의 host candidate가 컨테이너 내부
-IP(172.17.x.x)로 광고된다. 이 경우 연결은 컨테이너 → 폰 방향의 outbound UDP + peer-reflexive
-승격에 의존하게 되어 환경에 따라 실패할 수 있다. 실기기 연동 전에 반드시 다른 Tailscale
-노드에서 `scripts/test_webrtc_client.py`로 컨테이너 상대 E2E를 확인하고, 실패하면
-(1) 서버를 호스트에서 직접 실행하거나, (2) 고정 UDP 포트 범위를 publish하거나,
-(3) 컨테이너에 Tailscale을 넣는 방식으로 전환할 것.
+IP(172.17.x.x)로 광고된다. 실측 결과:
+
+- aiortc 파이썬 클라이언트(실제 IP candidate 사용) ↔ 컨테이너: **연결 성공**
+  (컨테이너 outbound UDP + peer-reflexive 승격)
+- **브라우저 ↔ 컨테이너: 연결 실패** (`connectionState=failed`). 브라우저는 카메라 권한
+  없이는 candidate를 mDNS로 익명화하는데 컨테이너가 mDNS를 못 풀어 양방향 모두 도달 불가
+- **브라우저 ↔ 호스트 직접 실행 서버: 연결 성공** (서버 candidate가 실제 Tailscale IP)
+
+결론: **WebRTC를 쓰는 한 서버는 호스트에서 직접 실행하는 것을 권장**한다. 컨테이너 배포를
+유지하려면 컨테이너에 Tailscale을 넣거나(sidecar) 고정 UDP 포트 publish + candidate 조정이
+필요하다. 앱(flutter_webrtc, 카메라 권한 보유)은 실제 IP candidate를 쓰므로 컨테이너와
+연결될 가능성이 있으나, 실기기 검증 전까지 보장하지 말 것.
+
+외부 접근 시 방화벽: venv python(`.venv\Scripts\python.exe`)에 대한 인바운드 허용 규칙이
+필요할 수 있다 (기존 규칙은 시스템 python 경로에만 존재). 관리자 PowerShell에서:
+
+```powershell
+New-NetFirewallRule -DisplayName "BeautyTalk backend" -Direction Inbound -Action Allow -Program "C:\portable\beautytalk-backend\.venv\Scripts\python.exe"
+```

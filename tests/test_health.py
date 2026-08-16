@@ -20,6 +20,13 @@ def test_health_reports_status_and_sessions(client):
     assert body["ws_connections"] == 0
 
 
+def test_webrtc_test_page_served(client):
+    response = client.get("/test")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "BeautyTalk" in response.text
+
+
 def test_health_counts_ws_sessions(client):
     with client.websocket_connect("/ws/health-count-test"):
         body = client.get("/health").json()

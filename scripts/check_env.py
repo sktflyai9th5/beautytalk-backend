@@ -39,6 +39,11 @@ def check_python() -> None:
         (v.major, v.minor) >= (3, 11),
         f"{sys.version.split()[0]} ({sys.platform})",
     )
+    in_venv = sys.prefix != sys.base_prefix
+    print(f"       interpreter: {sys.executable}")
+    if not in_venv:
+        print("       (주의) venv가 아닌 시스템 Python입니다. 패키지 누락 시:")
+        print("       .venv\\Scripts\\Activate.ps1  (또는 .venv\\Scripts\\python.exe로 실행)")
 
 
 def check_package_versions() -> None:
@@ -79,9 +84,15 @@ def check_dependency_conflicts() -> None:
 
 def check_aiortc_declared_bounds() -> None:
     """aiortc가 선언한 핵심 의존성 범위와 실제 설치 버전을 출력 (버전 드리프트 추적용)."""
-    reqs = [r for r in (md.requires("aiortc") or []) if r.split(">")[0].split("<")[0].split("=")[0].strip() in ("av", "aioice", "pylibsrtp", "cryptography", "pyee")]
+    try:
+        reqs = md.requires("aiortc") or []
+    except md.PackageNotFoundError:
+        report("aiortc installed", False, "미설치 - venv 활성화 후 pip install -r requirements.txt")
+        return
     for r in reqs:
-        print(f"       aiortc declares: {r}")
+        name = r.split(">")[0].split("<")[0].split("=")[0].split(";")[0].strip()
+        if name in ("av", "aioice", "pylibsrtp", "cryptography", "pyee"):
+            print(f"       aiortc declares: {r}")
 
 
 def check_pydantic_v2_api() -> None:
@@ -170,17 +181,24 @@ def check_app_imports() -> None:
 
 
 def main() -> None:
-    print(f"=== BeautyTalk backend environment check ===")
-    check_python()
-    check_package_versions()
-    check_aiortc_declared_bounds()
-    check_dependency_conflicts()
-    check_app_imports()
-    check_pydantic_v2_api()
-    check_av_numpy_pillow_interop()
-    check_aiortc_signaling()
-    check_uvicorn_websocket_protocol()
-    check_websockets_client_api()
+    print("=== BeautyTalk backend environment check ===")
+    checks = [
+        check_python,
+        check_package_versions,
+        check_aiortc_declared_bounds,
+        check_dependency_conflicts,
+        check_app_imports,
+        check_pydantic_v2_api,
+        check_av_numpy_pillow_interop,
+        check_aiortc_signaling,
+        check_uvicorn_websocket_protocol,
+        check_websockets_client_api,
+    ]
+    for fn in checks:
+        try:
+            fn()
+        except Exception as e:  # 한 항목이 죽어도 나머지는 계속 검사
+            report(fn.__name__, False, f"{type(e).__name__}: {e}")
     if _failures:
         print(f"RESULT: FAIL ({len(_failures)}): {', '.join(_failures)}")
         sys.exit(1)

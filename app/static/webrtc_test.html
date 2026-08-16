@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BeautyTalk WebRTC 테스트</title>
+<style>
+  body { font-family: 'Malgun Gothic', sans-serif; margin: 16px; background: #fafafa; color: #222; }
+  h1 { font-size: 1.2rem; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .col { flex: 1; min-width: 320px; }
+  video, canvas#synth { width: 320px; height: 240px; background: #000; border-radius: 8px; }
+  button { padding: 8px 14px; margin: 4px 4px 4px 0; border: 1px solid #bbb; border-radius: 6px; background: #fff; cursor: pointer; font-size: 0.95rem; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.primary { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
+  #status span { display: inline-block; margin-right: 12px; padding: 2px 8px; border-radius: 4px; background: #eee; font-size: 0.85rem; }
+  #status .ok { background: #c6f6d5; }
+  #status .bad { background: #fed7d7; }
+  #result { padding: 12px; border: 2px solid #2b6cb0; border-radius: 8px; background: #ebf8ff; min-height: 48px; font-size: 1.05rem; }
+  #log { height: 260px; overflow-y: auto; background: #1a202c; color: #9ae6b4; font-family: Consolas, monospace; font-size: 0.78rem; padding: 8px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
+  .note { font-size: 0.82rem; color: #666; }
+  fieldset { border: 1px solid #ddd; border-radius: 8px; margin: 8px 0; }
+</style>
+</head>
+<body>
+<h1>BeautyTalk 백엔드 WebRTC/WebSocket 테스트</h1>
+<div id="status">
+  <span id="st-ws">WS: -</span>
+  <span id="st-pc">WebRTC: -</span>
+  <span id="st-dc">DataChannel: -</span>
+  <span id="st-sid">session: -</span>
+</div>
+
+<div class="row">
+  <div class="col">
+    <fieldset>
+      <legend>1. 영상 소스 선택 후 연결</legend>
+      <button id="btn-synth" class="primary">합성 영상으로 시작</button>
+      <button id="btn-camera">카메라로 시작</button>
+      <button id="btn-stop" disabled>연결 종료</button>
+      <p class="note" id="camera-note">
+        일반 http:// 주소에서는 브라우저 보안 정책상 카메라가 차단됩니다.
+        합성 영상 모드는 어디서나 동작합니다. 카메라를 쓰려면 크롬에서
+        chrome://flags/#unsafely-treat-insecure-origin-as-secure 에 이 주소를 추가하세요.
+      </p>
+      <video id="preview" autoplay muted playsinline></video>
+      <canvas id="synth" width="640" height="480" style="display:none"></canvas>
+    </fieldset>
+    <fieldset>
+      <legend>2. 분석 트리거</legend>
+      <label><input type="radio" name="path" value="ws" checked> WebSocket으로 전송</label>
+      <label><input type="radio" name="path" value="dc"> DataChannel로 전송</label>
+      <br>
+      <button class="ask" data-q="립 봐줘잉" disabled>립 봐줘</button>
+      <button class="ask" data-q="눈 화장 봐줘" disabled>눈 봐줘</button>
+      <button class="ask" data-q="볼 어때?" disabled>볼 봐줘</button>
+      <button class="ask" data-q="지금 어때?" disabled>전체 봐줘</button>
+      <button id="btn-ping" disabled>ping</button>
+      <label><input type="checkbox" id="tts" checked> 결과 음성으로 읽기(TTS)</label>
+    </fieldset>
+    <fieldset>
+      <legend>3. 분석 결과 (앱이라면 이 문장을 TTS로 읽음)</legend>
+      <div id="result">-</div>
+    </fieldset>
+  </div>
+  <div class="col">
+    <fieldset>
+      <legend>메시지 로그</legend>
+      <div id="log"></div>
+    </fieldset>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const logEl = $("#log");
+let ws = null, pc = null, dc = null, stream = null, synthTimer = null;
+let reqCounter = 0;
+const sessionId = "web-" + Math.random().toString(36).slice(2, 10);
+$("#st-sid").textContent = "session: " + sessionId;
+
+function log(tag, msg) {
+  const line = `[${new Date().toLocaleTimeString()}] ${tag} ${msg}`;
+  logEl.textContent += line + "\n";
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function setStatus(id, text, ok) {
+  const el = $(id);
+  el.textContent = text;
+  el.className = ok === undefined ? "" : ok ? "ok" : "bad";
+}
+function setTriggerEnabled(on) {
+  document.querySelectorAll(".ask").forEach(b => b.disabled = !on);
+  $("#btn-ping").disabled = !on;
+  $("#btn-stop").disabled = !on;
+  $("#btn-synth").disabled = on;
+  $("#btn-camera").disabled = on;
+}
+
+function connectWebSocket() {
+  return new Promise((resolve, reject) => {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${proto}://${location.host}/ws/${sessionId}`);
+    ws.onopen = () => { setStatus("#st-ws", "WS: 연결됨", true); resolve(); };
+    ws.onclose = () => setStatus("#st-ws", "WS: 끊김", false);
+    ws.onerror = (e) => { setStatus("#st-ws", "WS: 오류", false); reject(e); };
+    ws.onmessage = (ev) => {
+      log("[ws<]", ev.data);
+      let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg.type === "analysis_result") {
+        $("#result").textContent =
+          `[${msg.status}/${msg.region}/${msg.verdict ?? "-"}] ${msg.message}`;
+        if ($("#tts").checked && "speechSynthesis" in window) {
+          const u = new SpeechSynthesisUtterance(msg.message);
+          u.lang = "ko-KR";
+          speechSynthesis.speak(u);
+        }
+      }
+    };
+  });
+}
+
+function makeSyntheticStream() {
+  const canvas = $("#synth");
+  const ctx = canvas.getContext("2d");
+  let t = 0;
+  synthTimer = setInterval(() => {
+    t++;
+    const g = ctx.createLinearGradient(0, 0, 640, 0);
+    g.addColorStop(0, `hsl(${t % 360}, 60%, 45%)`);
+    g.addColorStop(1, "#223");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 640, 480);
+    ctx.fillStyle = "#e8c9b0";
+    ctx.beginPath();
+    ctx.ellipse(320, 240, 120, 160, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.font = "20px monospace";
+    ctx.fillText("BeautyTalk synthetic " + t, 10, 30);
+  }, 66);
+  return canvas.captureStream(15);
+}
+
+async function start(useCamera) {
+  try {
+    await connectWebSocket();
+    if (useCamera) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("이 주소(비보안 http)에서는 카메라를 쓸 수 없습니다. 합성 영상 모드를 사용하세요.");
+        ws.close();
+        return;
+      }
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+    } else {
+      stream = makeSyntheticStream();
+    }
+    $("#preview").srcObject = stream;
+
+    pc = new RTCPeerConnection({ iceServers: [] });
+    pc.onconnectionstatechange = () => {
+      log("[pc]", "state=" + pc.connectionState);
+      setStatus("#st-pc", "WebRTC: " + pc.connectionState, pc.connectionState === "connected");
+      if (["failed", "closed", "disconnected"].includes(pc.connectionState)) setTriggerEnabled(false);
+    };
+    dc = pc.createDataChannel("control");
+    dc.onopen = () => setStatus("#st-dc", "DataChannel: open", true);
+    dc.onclose = () => setStatus("#st-dc", "DataChannel: closed", false);
+    dc.onmessage = (ev) => log("[dc<]", ev.data);
+    stream.getVideoTracks().forEach(tr => pc.addTrack(tr, stream));
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    // 서버(aiortc)는 trickle ICE를 안 쓰므로 candidate 수집 완료까지 대기
+    await new Promise((res) => {
+      if (pc.iceGatheringState === "complete") return res();
+      pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === "complete") res(); };
+      setTimeout(res, 3000);
+    });
+
+    log("[*]", "POST /webrtc/offer");
+    const resp = await fetch("/webrtc/offer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, sdp: pc.localDescription.sdp, type: pc.localDescription.type }),
+    });
+    if (!resp.ok) throw new Error("offer 실패: HTTP " + resp.status + " " + await resp.text());
+    const answer = await resp.json();
+    await pc.setRemoteDescription({ sdp: answer.sdp, type: answer.type });
+    log("[+]", "answer 적용 완료, 연결 대기중...");
+    setTriggerEnabled(true);
+  } catch (e) {
+    log("[!]", "시작 실패: " + e);
+    alert("시작 실패: " + e);
+    stop();
+  }
+}
+
+function stop() {
+  if (synthTimer) { clearInterval(synthTimer); synthTimer = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (dc) { try { dc.close(); } catch {} dc = null; }
+  if (pc) { try { pc.close(); } catch {} pc = null; }
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  setTriggerEnabled(false);
+  setStatus("#st-pc", "WebRTC: -");
+  setStatus("#st-dc", "DataChannel: -");
+}
+
+function sendAnalyze(question) {
+  const payload = JSON.stringify({
+    type: "analyze",
+    question: question,
+    request_id: "web-" + (++reqCounter),
+  });
+  const useDc = document.querySelector('input[name="path"]:checked').value === "dc";
+  if (useDc) {
+    if (!dc || dc.readyState !== "open") { alert("DataChannel이 아직 열리지 않았습니다"); return; }
+    dc.send(payload);
+    log("[dc>]", payload);
+  } else {
+    ws.send(payload);
+    log("[ws>]", payload);
+  }
+}
+
+$("#btn-synth").onclick = () => start(false);
+$("#btn-camera").onclick = () => start(true);
+$("#btn-stop").onclick = stop;
+$("#btn-ping").onclick = () => { ws.send(JSON.stringify({ type: "ping" })); log("[ws>]", '{"type":"ping"}'); };
+document.querySelectorAll(".ask").forEach(b => b.onclick = () => sendAnalyze(b.dataset.q));
+window.addEventListener("beforeunload", stop);
+</script>
+</body>
+</html>
