@@ -1,7 +1,11 @@
-fastapi
-uvicorn[standard]
-aiortc
-av
-numpy
-pillow
-httpx
+# 2026-08-16 검증 완료 버전으로 고정 (scripts/check_env.py로 로컬/컨테이너 양쪽 검증됨)
+# CI가 push 시점에 이미지를 빌드하므로, 미고정 시 검증되지 않은 버전이 배포될 수 있음
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
+aiortc==1.15.0
+av==17.1.0
+numpy==2.4.6
+pillow==12.3.0
+httpx==0.28.1
+pydantic==2.13.4
+websockets==17.0.1
