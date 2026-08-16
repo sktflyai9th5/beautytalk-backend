@@ -98,21 +98,26 @@ nullable로 처리해야 한다. 분석이 이미 진행 중일 때 온 트리�
 
 ## 테스트
 
-반드시 venv를 활성화한 뒤 실행할 것 (`uvicorn`/`pytest` not found 오류의 원인):
+패키지는 전부 `.venv` 안에 있다. PowerShell 실행 정책 때문에 `Activate.ps1`이 막히면
+(기본 Restricted 정책의 `PSSecurityException`) **활성화 없이 venv python을 직접 호출**하면 된다:
 
 ```powershell
 cd C:\portable\beautytalk-backend
-.\.venv\Scripts\Activate.ps1   # 없으면: python -m venv .venv 후 pip install -r requirements-dev.txt
+# venv가 없으면: python -m venv .venv; .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+
+.\.venv\Scripts\python.exe scripts\check_env.py     # 버전/호환성 검증 (로컬·컨테이너 공용)
+.\.venv\Scripts\python.exe -m pytest -q
+
+# 서버 실행:
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000
+
+# 서버 띄운 뒤 E2E (별도 창):
+.\.venv\Scripts\python.exe scripts\test_ws_client.py --url ws://127.0.0.1:8000
+.\.venv\Scripts\python.exe scripts\test_webrtc_client.py --http-url http://127.0.0.1:8000 --ws-url ws://127.0.0.1:8000
 ```
 
-```bash
-python scripts/check_env.py    # 버전/호환성 검증 (로컬·컨테이너 공용)
-pytest
-
-# 서버 띄운 뒤 E2E:
-python scripts/test_ws_client.py --url ws://127.0.0.1:8000
-python scripts/test_webrtc_client.py --http-url http://127.0.0.1:8000 --ws-url ws://127.0.0.1:8000
-```
+굳이 activate를 쓰고 싶으면 현재 창에서만 정책을 풀거나(`Set-ExecutionPolicy -Scope Process Bypass`)
+cmd에서 `.venv\Scripts\activate.bat`를 사용.
 
 ### 웹 테스트 페이지 (`GET /test`)
 
