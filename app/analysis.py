@@ -10,6 +10,8 @@ import json
 import logging
 import time
 import uuid
+from datetime import datetime
+from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -45,6 +47,34 @@ async def _frame_to_jpeg(frame) -> bytes:
         return buf.getvalue()
 
     return await asyncio.to_thread(_encode)
+
+
+DEBUG_FRAMES_DIR = Path("debug_frames")
+
+
+async def _save_debug_frame(jpeg: bytes, session_id: str, request_id: str) -> None:
+    """분석에 사용된 프레임을 저장 (모델이 실제로 본 이미지 검증용)."""
+
+    def _save() -> Path:
+        DEBUG_FRAMES_DIR.mkdir(exist_ok=True)
+        stamp = datetime.now().strftime("%H%M%S")
+        path = DEBUG_FRAMES_DIR / f"{stamp}_{session_id}_{request_id}.jpg"
+        path.write_bytes(jpeg)
+        return path
+
+    try:
+        path = await asyncio.to_thread(_save)
+        log_event(
+            logger,
+            "debug_frame_saved",
+            session_id=session_id,
+            request_id=request_id,
+            path=str(path),
+            bytes=len(jpeg),
+        )
+    except OSError:
+        log_event(logger, "debug_frame_save_failed", level=logging.WARNING,
+                  session_id=session_id, exc_info=True)
 
 
 async def send_to_session(session: Session, message: BaseModel) -> str:
@@ -94,6 +124,8 @@ async def run_analysis(state, session: Session, *, question: str, request_id: st
         async with session.analysis_lock:
             frame = session.frames.latest()
             jpeg = await _frame_to_jpeg(frame) if frame is not None else None
+            if jpeg is not None and settings.debug_save_frames:
+                await _save_debug_frame(jpeg, session.session_id, request_id)
             payload = await asyncio.wait_for(
                 state.analyzer.analyze(jpeg, question),
                 timeout=settings.analysis_timeout,

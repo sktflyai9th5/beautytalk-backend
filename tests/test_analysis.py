@@ -32,6 +32,7 @@ def make_settings(**overrides):
         session_reap_interval=30,
         analysis_timeout=5,
         max_sessions=50,
+        debug_save_frames=False,
     )
     values.update(overrides)
     return Settings(**values)
@@ -202,6 +203,29 @@ async def test_handle_client_message_ignored_when_session_closing():
     await handle_client_message(state, session, '{"type": "ping"}', source="websocket")
     assert session.ws.sent == []
     assert session.analysis_tasks == set()
+
+
+async def test_debug_save_frames_writes_jpeg(tmp_path, monkeypatch):
+    import numpy as np
+    from av import VideoFrame
+
+    from app import analysis as analysis_module
+
+    monkeypatch.setattr(analysis_module, "DEBUG_FRAMES_DIR", tmp_path / "debug_frames")
+    state = make_state()
+    state.settings = make_settings(debug_save_frames=True)
+    session = Session(session_id="s1")
+    session.ws = FakeWebSocket()
+    frame = VideoFrame.from_ndarray(
+        np.zeros((48, 64, 3), dtype=np.uint8), format="bgr24"
+    )
+    session.frames.put(frame)
+    await run_analysis(state, session, question="립", request_id="rframe")
+    saved = list((tmp_path / "debug_frames").glob("*_s1_rframe.jpg"))
+    assert len(saved) == 1
+    assert saved[0].stat().st_size > 100
+    [result] = session.ws.sent
+    assert result["status"] == "ok"
 
 
 async def test_analyze_without_ws_falls_back_to_datachannel():

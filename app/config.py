@@ -9,6 +9,7 @@
 - SESSION_REAP_INTERVAL: 유휴 세션 검사 주기 초 (기본 30)
 - ANALYSIS_TIMEOUT  : 분석 1회 제한 시간 초 (기본 60)
 - MAX_SESSIONS      : 동시 세션 수 상한 (기본 50)
+- DEBUG_SAVE_FRAMES : "true"면 분석에 사용된 프레임을 debug_frames/에 JPEG로 저장
 """
 
 import os
@@ -28,6 +29,7 @@ class Settings:
     session_reap_interval: float
     analysis_timeout: float
     max_sessions: int
+    debug_save_frames: bool
 
 
 def load_settings() -> Settings:
@@ -49,4 +51,5 @@ def load_settings() -> Settings:
         session_reap_interval=float(os.environ.get("SESSION_REAP_INTERVAL", "30")),
         analysis_timeout=float(os.environ.get("ANALYSIS_TIMEOUT", "60")),
         max_sessions=int(os.environ.get("MAX_SESSIONS", "50")),
+        debug_save_frames=os.environ.get("DEBUG_SAVE_FRAMES", "").strip().lower() in _TRUTHY,
     )
