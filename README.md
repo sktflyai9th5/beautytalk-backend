@@ -1,5 +1,7 @@
 # beautytalk-backend
 
+> **전체 API 명세서와 테스트 명령어: [API.md](API.md)**
+
 시각장애인 메이크업 도우미 BeautyTalk의 백엔드.
 Flutter 앱이 WebRTC로 보내는 카메라 영상을 수신하고, 음성 트리거가 오면
 최신 프레임을 Qwen3-VL로 분석해 WebSocket으로 한국어 피드백을 push한다.
