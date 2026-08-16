@@ -81,17 +81,14 @@ def _cancel_media_tasks(session: Session) -> None:
     session.media_tasks.clear()
 
 
-@router.post("/webrtc/offer", response_model=OfferResponse)
-async def webrtc_offer(body: OfferRequest, request: Request) -> OfferResponse:
-    state = request.app.state
-    manager = state.manager
-    session_id = body.session_id
-    log_event(logger, "webrtc_offer_received", session_id=session_id)
+class SignalingAborted(Exception):
+    """시그널링 도중 세션이 정리되어 협상을 중단함."""
 
-    try:
-        session = manager.get_or_create(session_id)
-    except SessionLimitError:
-        raise HTTPException(status_code=503, detail="동시 세션 수가 가득 찼습니다. 잠시 후 다시 시도해 주세요.")
+
+async def negotiate_offer(state, session: Session, sdp: str, sdp_type: str) -> OfferResponse:
+    """offer SDP를 받아 피어를 구성하고 answer를 돌려준다 (HTTP/WS 시그널링 공용)."""
+    manager = state.manager
+    session_id = session.session_id
     session.touch()
 
     # 같은 session_id의 동시 offer는 세션별 락으로 직렬화한다.
@@ -109,7 +106,7 @@ async def webrtc_offer(body: OfferRequest, request: Request) -> OfferResponse:
 
         # old_pc.close()를 기다리는 사이 세션이 정리됐을 수 있다 (WS 끊김, 유휴 회수 등)
         if session.closing or manager.get(session_id) is not session:
-            raise HTTPException(status_code=409, detail="시그널링 중 세션이 종료되었습니다. 다시 연결해 주세요.")
+            raise SignalingAborted("시그널링 중 세션이 종료되었습니다. 다시 연결해 주세요.")
 
         # Tailscale 내부망: STUN/TURN 없이 host candidate만으로 연결
         pc = RTCPeerConnection(RTCConfiguration(iceServers=[]))
@@ -166,7 +163,7 @@ async def webrtc_offer(body: OfferRequest, request: Request) -> OfferResponse:
                     with contextlib.suppress(Exception):
                         await pc.close()
 
-        await pc.setRemoteDescription(RTCSessionDescription(sdp=body.sdp, type=body.type))
+        await pc.setRemoteDescription(RTCSessionDescription(sdp=sdp, type=sdp_type))
         answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)  # aiortc는 ICE gathering 완료까지 대기한다
 
@@ -174,7 +171,7 @@ async def webrtc_offer(body: OfferRequest, request: Request) -> OfferResponse:
         if session.closing or manager.get(session_id) is not session:
             with contextlib.suppress(Exception):
                 await pc.close()
-            raise HTTPException(status_code=409, detail="시그널링 중 세션이 종료되었습니다. 다시 연결해 주세요.")
+            raise SignalingAborted("시그널링 중 세션이 종료되었습니다. 다시 연결해 주세요.")
 
         log_event(logger, "webrtc_answer_sent", session_id=session_id)
         return OfferResponse(
@@ -182,3 +179,17 @@ async def webrtc_offer(body: OfferRequest, request: Request) -> OfferResponse:
             sdp=pc.localDescription.sdp,
             type=pc.localDescription.type,
         )
+
+
+@router.post("/webrtc/offer", response_model=OfferResponse)
+async def webrtc_offer(body: OfferRequest, request: Request) -> OfferResponse:
+    state = request.app.state
+    log_event(logger, "webrtc_offer_received", session_id=body.session_id, via="http")
+    try:
+        session = state.manager.get_or_create(body.session_id)
+    except SessionLimitError:
+        raise HTTPException(status_code=503, detail="동시 세션 수가 가득 찼습니다. 잠시 후 다시 시도해 주세요.")
+    try:
+        return await negotiate_offer(state, session, body.sdp, body.type)
+    except SignalingAborted as e:
+        raise HTTPException(status_code=409, detail=str(e))

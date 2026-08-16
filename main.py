@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.analyzer import get_analyzer
@@ -49,6 +50,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="beautytalk-backend", lifespan=lifespan)
+# 앱 WebView(https://appassets.androidplatform.net)와 웹 테스트 페이지에서의
+# 시그널링 fetch를 허용한다 (Tailscale 내부망 전용 서비스)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(webrtc_router)
 app.include_router(websocket_router)
 

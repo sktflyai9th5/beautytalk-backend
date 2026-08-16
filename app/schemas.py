@@ -112,3 +112,13 @@ class ErrorMessage(BaseModel):
     type: Literal["error"] = "error"
     message: str
     timestamp: str = Field(default_factory=utc_now_iso)
+
+
+class WebRTCAnswerMessage(BaseModel):
+    """WS 경유 시그널링 응답 (WebView file:// 페이지는 fetch가 막혀 WS로 offer를 보낸다)."""
+
+    type: Literal["webrtc_answer"] = "webrtc_answer"
+    session_id: str
+    sdp: str
+    sdp_type: str
+    timestamp: str = Field(default_factory=utc_now_iso)
