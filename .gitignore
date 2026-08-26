@@ -1,7 +1,49 @@
-.venv/
+# ─────────────────────────────────────────────────────────────
+# BeautyTalk 백엔드 (FastAPI / CUDA)
+# ─────────────────────────────────────────────────────────────
+
+# 파이썬
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 가상환경
+.venv/
+venv/
+env/
+
+# 비밀값 — HF_TOKEN 등. 절대 커밋하지 말 것
 .env
+.env.*
+!.env.example
+
+# 모델 가중치 · 캐시
+# 베이스와 어댑터는 HuggingFace 에서 받아 도커 볼륨(hf-cache)에 둔다.
+# 실수로 레포에 떨어진 것만 막는다.
+hf-cache/
+.cache/
+*.safetensors
+*.bin
+*.pt
+*.onnx
+# 얼굴 랜드마커는 저장소에 포함한다 (수 MB, 서버 구동에 필수)
+!beautytalk/assets/face_landmarker.task
+
+# 실행 중 생기는 것
+*.log
 debug_frames/
-logs/
+outputs/
+
+# 자가진단·디버깅에 쓴 사진 (server/ 바로 아래만)
+# few-shot 예시는 beautytalk/assets/ 안에 있어 영향 없다
+/*.jpg
+/*.jpeg
+/*.png
+/*.heic
+
+# OS
+.DS_Store
+Thumbs.db

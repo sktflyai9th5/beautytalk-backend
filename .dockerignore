@@ -1,0 +1,8 @@
+qwen/
+tests/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+*.md
+!beautytalk/assets/**/*.md

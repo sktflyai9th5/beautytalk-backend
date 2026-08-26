@@ -1,11 +1,26 @@
-# 2026-08-16 검증 완료 버전으로 고정 (scripts/check_env.py로 로컬/컨테이너 양쪽 검증됨)
-# CI가 push 시점에 이미지를 빌드하므로, 미고정 시 검증되지 않은 버전이 배포될 수 있음
-fastapi==0.141.1
-uvicorn[standard]==0.52.3
-aiortc==1.15.0
-av==17.1.0
-numpy==2.4.6
+# 인계 문서(beautytalk/assets/lip/HANDOFF.md §1)가 검증한 버전 그대로.
+# transformers 가 5.x 라는 점에 주의 — 4.x 기준 예제 코드는 맞지 않는다.
+#
+# torch/torchvision 은 CUDA 인덱스에서 따로 설치한다 (Dockerfile 참고):
+#   pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+# torchvision 은 선택이 아니다 — Qwen3VLProcessor 가 비디오 프로세서를 함께 들고
+# 있어서, 없으면 프로세서 로드 자체가 ImportError 로 죽는다.
+
+transformers==5.5.0
+accelerate==1.14.0
+bitsandbytes==0.50.1
+peft==0.20.0            # 어댑터 핫스왑. adapter_config.json 의 peft_version 과 동일
+# mediapipe 는 0.10.x 여야 한다. 1.0.0 은 레거시 mp.solutions 를 통째로 없앴는데,
+# 메이크업 학습 코드가 얼굴 크롭(face_detection)과 부위 판정(face_mesh)에 그 API 를 쓴다.
+# 0.10.x 는 tasks API 도 함께 제공하므로 립 경로(FaceLandmarker)도 그대로 돌아간다.
+mediapipe==0.10.21
+protobuf<5                # mediapipe 0.10.x 요구. 새 protobuf 와 섞이면 런타임에 깨진다
 pillow==12.3.0
-httpx==0.28.1
-pydantic==2.13.4
-websockets==17.0.1
+pillow-heif==1.5.0      # iOS HEIC 업로드. 없으면 아이폰 사진이 통째로 예외
+# 인계 문서는 numpy==2.4.6 이지만 mediapipe 0.10.x 가 numpy<2 를 요구한다.
+# numpy 2 에 의존하는 코드는 없으므로 여기를 양보한다 (pip 이 1.26.x 를 고른다).
+numpy<2
+
+fastapi==0.121.2
+uvicorn[standard]==0.41.0
+pydantic==2.13.1

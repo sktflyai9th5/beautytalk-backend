@@ -1,0 +1,371 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "beautytalk-router",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/routes": {
+      "get": {
+        "summary": "Route List",
+        "description": "어떤 문장이 어디로 가는지 눈으로 확인할 때.",
+        "operationId": "route_list_routes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Route List Routes Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/route-test": {
+      "get": {
+        "summary": "Route Test",
+        "description": "모델 없이 라우팅만 확인. /route-test?q=립 어때",
+        "operationId": "route_test_route_test_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Route Test Route Test Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analyze": {
+      "post": {
+        "summary": "Analyze Http",
+        "description": "WS 없이 한 방에 — curl 로 시험할 때 쓴다.",
+        "operationId": "analyze_http_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Analysis"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/framing": {
+      "post": {
+        "summary": "Framing",
+        "description": "찍기 전 프레이밍 확인. **GPU 를 쓰지 않는다** — 수십 ms 안에 돌아온다.\n\n앱이 카운트다운 전에 부른다. 자세가 틀렸으면 안내만 하고 촬영을 미뤄서,\n3초를 버리고 20초짜리 분석까지 돌린 뒤에야 \"다시 찍어 주세요\" 를 듣는 일을 없앤다.",
+        "operationId": "framing_framing_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FramingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FramingOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/warmup": {
+      "post": {
+        "summary": "Warmup",
+        "description": "GPU 깨우기. 앱이 가이드 탭에서 주기적으로 부른다.",
+        "operationId": "warmup_warmup_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Warmup Warmup Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Analysis": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "route": {
+            "type": "string",
+            "title": "Route",
+            "default": ""
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          },
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "default": ""
+          },
+          "prep_ms": {
+            "type": "integer",
+            "title": "Prep Ms",
+            "default": 0
+          },
+          "infer_ms": {
+            "type": "integer",
+            "title": "Infer Ms",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "message"
+        ],
+        "title": "Analysis"
+      },
+      "AnalyzeBody": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "title": "Question",
+            "default": ""
+          },
+          "image_b64": {
+            "type": "string",
+            "title": "Image B64",
+            "default": ""
+          },
+          "mirrored": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mirrored"
+          }
+        },
+        "type": "object",
+        "title": "AnalyzeBody"
+      },
+      "FramingBody": {
+        "properties": {
+          "image_b64": {
+            "type": "string",
+            "title": "Image B64",
+            "default": ""
+          },
+          "mirrored": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mirrored"
+          }
+        },
+        "type": "object",
+        "title": "FramingBody"
+      },
+      "FramingOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "guidance": {
+            "type": "string",
+            "title": "Guidance"
+          },
+          "face_w": {
+            "type": "integer",
+            "title": "Face W",
+            "default": 0
+          },
+          "lip_w": {
+            "type": "integer",
+            "title": "Lip W",
+            "default": 0
+          },
+          "ms": {
+            "type": "integer",
+            "title": "Ms",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "code",
+          "guidance"
+        ],
+        "title": "FramingOut"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
